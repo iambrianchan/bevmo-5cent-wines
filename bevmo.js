@@ -2,7 +2,7 @@ var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 var cheerio = require("cheerio");
 var fs = require("fs");
 var http = require("http");
-var XLSX = require('XLSX');
+var XLSX = require('xlsx');
 
 
 cellar = [];
