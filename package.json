@@ -8,5 +8,9 @@
     "cheerio": "^0.19.0",
     "xlsx": "^0.8.0",
     "xmlhttprequest": "^1.8.0"
+  },
+  "devDependencies": {
+    "chai": "^3.4.1",
+    "mocha": "^2.3.4"
   }
 }
