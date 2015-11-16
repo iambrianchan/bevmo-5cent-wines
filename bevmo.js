@@ -7,7 +7,11 @@ var XLSX = require('xlsx');
 
 cellar = [];
 var size = 0;
-getWines();
+
+if (!module.parent) {
+	getWines();
+}
+
 var start = new Date();
 
 function getWines() {
