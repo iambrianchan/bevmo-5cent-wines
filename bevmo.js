@@ -442,3 +442,5 @@ wb.Sheets[ws_name] = ws;
 XLSX.writeFile(wb, '5centwines.xlsx');
 
 }
+
+exports.convertWineType = convertWineType;
