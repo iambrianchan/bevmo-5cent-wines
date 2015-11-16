@@ -2,12 +2,16 @@ var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 var cheerio = require("cheerio");
 var fs = require("fs");
 var http = require("http");
-var XLSX = require('XLSX');
+var XLSX = require('xlsx');
 
 
 cellar = [];
 var size = 0;
-getWines();
+
+if (!module.parent) {
+	getWines();
+}
+
 var start = new Date();
 
 function getWines() {
@@ -273,66 +277,61 @@ function extractWineEnthusiastReview(wine, chunk) {
 }
 
 function convertWineType(type) {
-	var masterType;
-	switch(type) {
+	switch (type) {
 			case "Other Reds":
-				masterType = "Other Red";
-				break;
+				return "Other Red";
 			case "Other Whites":
-				masterType = "Other White";
-				break;
+				return "Other White";
 			case "Tempranillo":
-				masterType = "Other Red";
+				return "Other Red";
 			case "Moscato":
-				masterType = "Other";
+				return "Other";
 			case "Barbera":
-				masterType = "Other Red";
+				return "Other Red";
 			case "Chianti":
-				masterType = "Other Red";
+				return "Other Red";
 			case "Bordeaux":
-				masterType = "Other";
+				return "Other";
 			case "Port":
-				masterType = "Other Red";
+				return "Other Red";
 			case "Blush":
-				masterType = "Other";
+				return "Other";
 			case "Nero d'Avola":
-				masterType = "Other Red";
+				return "Other Red";
 			case "Rioja":
-				masterType = "Other Red";
+				return "Other Red";
 			case "Fortified/Dessert":
-				masterType = "Other";
+				return "Other";
 			case "Petite Sirah":
-				masterType = "Other Red";
+				return "Other Red";
 			case "Gewurztraminer":
-				masterType = "Other White";
+				return "Other White";
 			case "Cabernet Franc":
-				masterType = "Other Red";
+				return "Other Red";
 			case "Other Italian":
-				masterType = "Other";
+				return "Other";
 			case "Pinot Grigio/Pinot Gris":
-				masterType = "Other White";
+				return "Other White";
 			case "Riesling":
-				masterType = "Other White";
+				return "Other White";
 			case "Rhone":
-				masterType = "Other";
+				return "Other";
 			case "Viognier":
-				masterType = "Other White";
+				return "Other White";
 			case "Sake":
-				masterType = "Other";
+				return "Other";
 			case "Syrah/Shiraz":
-				masterType	= "Other Red";
+				return "Other Red";
 			case "Burgundy":
-				masterType = "Other";
+				return "Other";
 			case "Rose/Blush":
-				masterType = "Other";
+				return "Other";
 			case "Muscat":
-				masterType = "Other";
-				break;
+				return "Other";
 			default:
-				masterType = type;
+				return type;
 		}
-	return masterType;
-}
+	}
 
 function makeExcel(wines) {
 	function datenum(v, date1904) {
@@ -443,3 +442,5 @@ wb.Sheets[ws_name] = ws;
 XLSX.writeFile(wb, '5centwines.xlsx');
 
 }
+
+exports.convertWineType = convertWineType;
