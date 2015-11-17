@@ -20,7 +20,7 @@ function getWines() {
 	for (var i = 1; i < 300; i++) {
 		pages.push(i);
 	}
-	function scrape(index, callback) {
+	function scrape(index, callback) { // function that will make and send xhr
 		index = index % 26;
 
 		var html = "";
@@ -80,10 +80,10 @@ function sortWines(html) {
 	var wines = [];
 
 	cheerio_wines.each(function(index, element) {
-		var name = $(this).find('h2.product-name a').attr('title');
+		var name = $(this).find('h2.product-name a').attr('title'); // get the name from the item.
 		name = name.replace(/\(.+\)/g, "").replace(/\'[\d]+/g,"").trim();
 		var price;
-		var priceBox = $(this).find('div.price-box');
+		var priceBox = $(this).find('div.price-box'); // this price box contains the price.
 
 		if (priceBox.find('p.special-price').length > 0) {
 			price = priceBox.find('p.special-price').find('span.price').text();
@@ -91,30 +91,36 @@ function sortWines(html) {
 		else {
 			price = priceBox.find('span.price').eq(0).text();
 		}
-
+		var regularPrice = 0;
 		price = Number(price.replace(/[^0-9\.]+/g,""));
+
+		if ($(this).find('p.availability.out-of-stock').length > 0) { // in case an item is out of stock, we set price to the string.
+					regularPrice = price;
+					price = 'Out of stock';
+		}
 		var id = $(this).find('span.regular-price, span.price').attr('id');
 		id = getNumbersFromString(id);
 
-		var wine = {
+		var wine = {  //the basic wine object, more keys will be added later.
 			'name': name,
 			'price': price,
-			'id': id
+			'id': id,
+			'regularPrice': regularPrice
 			};
 		if (myIndexOf(wines, wine) == -1) {
 			wines.push(wine);
 		}
 	});
-	size = wines.length;
+	size = wines.length; // set the number of wines for later reference
 	console.log('\nfound: ' + wines.length + ' wines.');
 	console.log("######################################################")
-	return getReview(wines);
+	return getReview(wines);  
 }
 
 function getReview(wines) {
 	cellar = [];
 
-	function getBevmoReview(wine, check) {
+	function getBevmoReview(wine, check) { // function to make and send get request to bevmo for each individual wine
 		var id = wine.id;
 		var html;
 		var url = 'www.bevmo.com';
@@ -136,7 +142,9 @@ function getReview(wines) {
 
 		  	response.on('end', function () {
 		  		var data = extractReview(html);
-		  		wine.regularPrice = data.regularPrice;
+		  		if (!wine.regularPrice) {  // if the item was out of stock this key will have a string value.
+		  			wine.regularPrice = data.regularPrice;
+		  		}
 		    	wine.rating = data.rating;
 		    	wine.type =  data.type;
 		    	wine.vintage = data.vintage;
@@ -152,12 +160,12 @@ function getReview(wines) {
 		getBevmoReview(item, function(result) {
 			if (!result.rating) {
 				getWineEnthusiastReview(result, function(result) {
-					console.log('Adding wine number ' + cellar.length);
+					console.log('Adding wine number ' + (cellar.length + 1 ));
 					pushToCellar(result);
 				});
 			}
 			else {
-				console.log('Adding wine number ' + cellar.length);
+				console.log('Adding wine number ' + (cellar.length + 1 ));
 				pushToCellar(result);
 			}
 		});
@@ -167,43 +175,42 @@ function getReview(wines) {
 
 function extractReview(chunk) {
 	$ = cheerio.load(chunk);
-	var regularPrice = $('span.price').eq(0).text();
+	var regularPrice = $('span.price').eq(0).text();  // find the regular price of the product.
 	regularPrice = Number(regularPrice.replace(/[^0-9\.]+/g,""));
 
 	var table = $('#product-attribute-specs-table');
 	trr = table.find('tbody tr');
 	var rating = "";
-	var type = 'n/a';
-	var vintage = 'n/a';
-	var region = 'n/a';
-	var appellation = 'n/a';
+	var type, vintage, region, appellation;
+	type = vintage = region = appellation = "n/a";
+
 	for (var i = 0; i < trr.length; i++) {
-		if (trr.eq(i).children().eq(0).text() == "Type/Varietal") {
+		if (trr.eq(i).children().eq(0).text() == "Type/Varietal") {  // find the type
 			type = trr.eq(i).children().eq(1).text().trim();
 			type = convertWineType(type);
 		}
-		if (trr.eq(i).children().eq(0).text() == "Vintage") {
+		if (trr.eq(i).children().eq(0).text() == "Vintage") {  // find the vintage
 			vintage = trr.eq(i).children().eq(1).text().trim();
 		}
 
-		if (trr.eq(i).children().eq(0).text() == "Region") {
+		if (trr.eq(i).children().eq(0).text() == "Region") {  // find the region
 			region = trr.eq(i).children().eq(1).text().trim();
 		}
 
-		if (trr.eq(i).children().eq(0).text() == "Appellation") {
+		if (trr.eq(i).children().eq(0).text() == "Appellation") {  // find the appellation
 			appellation = trr.eq(i).children().eq(1).text().trim();
 		}
-		if (trr.eq(i).children().eq(0).text().search("Rating") != -1) {
+		if (trr.eq(i).children().eq(0).text().search("Rating") != -1) {  // find the rating
 			rating = trr.eq(i).children().eq(1).text().trim();
 		}
 	}
-	return {'rating': rating, 'type': type, 'vintage': vintage, 'region': region, 'appellation': appellation, 'regularPrice': regularPrice};
+	return {'rating': rating, 'type': type, 'vintage': vintage, 'region': region, 'appellation': appellation, 'regularPrice': regularPrice}; // return a data object with the extracted values.
 }
 
 function pushToCellar(wine) {
 	cellar.push(wine);
 
-	if (cellar.length == size) {
+	if (cellar.length == size) {  // if the array is the same length as size variable set earlier, create the excel
 		cellar.sort(function(a, b) {
 			return a.price - b.price;
 		})
@@ -214,10 +221,9 @@ function pushToCellar(wine) {
 	}
 }
 
-function getWineEnthusiastReview(wine, callback) {
-		var html;
+function getWineEnthusiastReview(wine, callback) {  // sets up and runs the xhr to wine enthusiast
 		var name = wine.name.toLowerCase();
-		name = name.replace('reserve', 'reserv').replace(' &', "");
+		name = name.replace('reserve', 'reserv').replace(' &', ""); // some products in wine enthusiast use 'reserva' and 'reserve' interchangeably.
 		name = name.replace(/\(.+\)/g, "").replace(/\'[\d]+/g,"").trim();
 		name = name.split(" ").join("+");
 
@@ -239,19 +245,21 @@ function extractWineEnthusiastReview(wine, chunk) {
 	name = name.replace('reserve', 'reserv').replace(' &', '');
 	var rating = 'n/a';
 	wine.rating = rating;
+
 	$ = cheerio.load(chunk);
-	var ratings = $('div.card.wines');
-	if (ratings.length == 0) {
-		ratings = $('div.expert-rating');
-		if (ratings.length == 0){
+	var ratings = $('div.card.wines'); // all matches found will be in this ratings variable
+	if (ratings.length == 0) { 
+		ratings = $('div.expert-rating'); 
+		if (ratings.length == 0) { // if there was not a direct match (1 result) return
 			return wine;
 		}
-		else {
+		else { // if the search yielded a single match the rating will be here.
 			rating = ratings.find('span.rating').eq(0).text().trim();
+			wine.rating = rating;
 			return wine;
 		}
 	}
-	var nameArray = name.split(' ');
+	var nameArray = name.split(' '); // all words in the array will be looked for in the returned matches
 
 	var vintage = 0;
 	for (var x = 0; x < ratings.length; x++) {
@@ -259,10 +267,10 @@ function extractWineEnthusiastReview(wine, chunk) {
 		for (var i = 0; i < nameArray.length; i++) {
 			var keyWord = nameArray[i];
 
-			if (title.search(keyWord) == -1) {
+			if (title.search(keyWord) == -1) { // if a matched item does not have a word in the product name, move to next match
 				break;
 			}
-			else if (i == nameArray.length - 1) {
+			else if (i == nameArray.length - 1) {  // if the last word checks out, find the vintage and if it is newer than stored vintage, set the rating.
 				var index = title.search(/\d/);
 				var year = Number.parseInt(title.substring(index, index + 4));
 				if (year > vintage) {
@@ -276,7 +284,7 @@ function extractWineEnthusiastReview(wine, chunk) {
 	return wine;
 }
 
-function convertWineType(type) {
+function convertWineType(type) {  // converts type from bevmo into generic types
 	switch (type) {
 			case "Other Reds":
 				return "Other Red";
@@ -344,7 +352,7 @@ function sheet_from_array_of_arrays(data, opts) {
 	var ws = {};
 	var range = {s: {c:10000000, r:10000000}, e: {c:0, r:0 }};
 	for(var R = 0; R != data.length; ++R) {
-		if (R < 1) {
+		if (R < 1) { // set the column names
 			for(var C = 0; C != data[0].length; ++C) {
 				if(range.s.r > R) range.s.r = R;
 				if(range.s.c > C) range.s.c = C;
@@ -365,7 +373,7 @@ function sheet_from_array_of_arrays(data, opts) {
 				ws[cell_ref] = cell;
 			}		
 		}
-		else {
+		else { // set each product as a row in the table
 			for (var C = 0; C < data[R].length; ++C) {
 				for (var i = 0; i < data[0].length; i++) {
 					var cell;
@@ -374,13 +382,17 @@ function sheet_from_array_of_arrays(data, opts) {
 							cell = {v: data[R][C].name};
 							break;
 						case 1:
-							cell = {v: data[R][C].price};
-							break;
+							if (typeof data[R][C].price == "string") {
+								cell = {v: data[R][C].price};
+								break;
+							}
+								cell = {v: '$' + data[R][C].price};
+								break;
 						case 2:
 							cell = {v: data[R][C].id};
 							break;
 						case 3:
-							cell = {v: data[R][C].regularPrice};
+							cell = {v: '$' + data[R][C].regularPrice};
 							break;
 						case 4:
 							cell = {v: data[R][C].rating};
