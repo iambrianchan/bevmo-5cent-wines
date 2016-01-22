@@ -15,6 +15,7 @@ if (!module.parent) {
 var start = new Date();
 
 function getWines() {
+	console.log("Finding wines from Bevmo");
 	var results = [];
 	var pages = [];
 	for (var i = 1; i < 300; i++) {
@@ -41,7 +42,6 @@ function getWines() {
 	pages.forEach(function(item) {
 		scrape(item, function(result) {
 			results.push(result);
-			console.log("Received page: " + results.length);
 			if (results.length == pages.length) {
 				sortWines(results.join(''));
 			}
@@ -113,7 +113,8 @@ function sortWines(html) {
 	});
 	size = wines.length; // set the number of wines for later reference
 	console.log('\nfound: ' + wines.length + ' wines.');
-	console.log("######################################################")
+	console.log("######################################################");
+	console.log("Getting reviews for wines");
 	return getReview(wines);  
 }
 
@@ -160,12 +161,10 @@ function getReview(wines) {
 		getBevmoReview(item, function(result) {
 			if (!result.rating) {
 				getWineEnthusiastReview(result, function(result) {
-					console.log('Adding wine number ' + (cellar.length + 1 ));
 					pushToCellar(result);
 				});
 			}
 			else {
-				console.log('Adding wine number ' + (cellar.length + 1 ));
 				pushToCellar(result);
 			}
 		});
@@ -213,7 +212,9 @@ function pushToCellar(wine) {
 	if (cellar.length == size) {  // if the array is the same length as size variable set earlier, create the excel
 		cellar.sort(function(a, b) {
 			return a.price - b.price;
-		})
+		});
+		console.log("######################################################");
+		console.log("Creating excel from " + cellar.length + " wines")
 		makeExcel(cellar);
 		var end = new Date();
 		var timeElapsed = (end - start) / 1000;
@@ -221,23 +222,50 @@ function pushToCellar(wine) {
 	}
 }
 
-function getWineEnthusiastReview(wine, callback) {  // sets up and runs the xhr to wine enthusiast
+function getWineEnthusiastReview(wine, callback) {
+		var html;
 		var name = wine.name.toLowerCase();
-		name = name.replace('reserve', 'reserv').replace(' &', ""); // some products in wine enthusiast use 'reserva' and 'reserve' interchangeably.
-		name = name.replace(/\(.+\)/g, "").replace(/\'[\d]+/g,"").trim();
+		name = name.replace('reserve', 'reserv').replace(' &', "");
 		name = name.split(" ").join("+");
 
-		var url = 'www.buyingguide.winemag.com/search?q=';
-		var xhr = new XMLHttpRequest();
-		xhr.open("GET", "http://buyingguide.winemag.com/search?q=" + name);
-		xhr.onreadystatechange = function() {
-		    	if ( xhr.readyState == 4 && 200 == xhr.status ) {
-					wine = extractWineEnthusiastReview(wine, xhr.responseText);
-					callback(wine);
-		        	return;
-		   		}
+		// old code from before winemag got an overhaul
+
+		// var url = 'www.buyingguide.winemag.com/search?q=';
+		// var xhr = new XMLHttpRequest();
+		// xhr.open("GET", "http://buyingguide.winemag.com/search?q=" + name);
+		// xhr.onreadystatechange = function() {
+		//     	if ( xhr.readyState == 4 && 200 == xhr.status ) {
+		//     		console.log(xhr.responseText);
+		// 			wine = extractWineEnthusiastReview(wine, xhr.responseText);
+		// 			console.log(wine);
+		// 			callback(wine);
+		//         	return;
+		//    		}
+		//    		// console.log(wine);
+		// }
+		// xhr.send();
+		// var url = "www.winemag.com";
+		var options = {
+			host: "www.winemag.com",
+			port: 80,
+			path: "/?s=" + name + "&search_type=reviews"
+		};
+		var scrape = function (response) {
+			response.on('data', function (chunk) {
+				html += chunk;
+				return;
+			});
+			response.on('error', function (e) {
+				console.log('got error: ' + e.message);
+				return;
+			});
+			response.on('end', function () {
+				wine = extractWineEnthusiastReview(wine, html);
+				callback(wine);
+				return;
+			})
 		}
-		xhr.send();
+		var req = http.get(options, scrape);
 }
 
 function extractWineEnthusiastReview(wine, chunk) {
