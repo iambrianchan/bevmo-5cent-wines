@@ -227,6 +227,7 @@ function getWineEnthusiastReview(wine, callback) {
 		var name = wine.name.toLowerCase();
 		name = name.replace('reserve', 'reserv').replace(' &', "");
 		name = name.split(" ").join("+");
+		name = name.split("-").join("+");
 
 		// old code from before winemag got an overhaul
 
@@ -269,46 +270,39 @@ function getWineEnthusiastReview(wine, callback) {
 }
 
 function extractWineEnthusiastReview(wine, chunk) {
-	var name = wine.name.toLowerCase();
-	name = name.replace('reserve', 'reserv').replace(' &', '');
 	var rating = 'n/a';
 	wine.rating = rating;
 
 	$ = cheerio.load(chunk);
-	var ratings = $('div.card.wines'); // all matches found will be in this ratings variable
-	if (ratings.length == 0) { 
-		ratings = $('div.expert-rating'); 
-		if (ratings.length == 0) { // if there was not a direct match (1 result) return
-			return wine;
-		}
-		else { // if the search yielded a single match the rating will be here.
-			rating = ratings.find('span.rating').eq(0).text().trim();
-			wine.rating = rating;
-			return wine;
-		}
+	var ratings = $('div.results'); // all matches found will be in this ratings variable
+	if (ratings.length > 0) {
+		findRating(wine, ratings);
 	}
-	var nameArray = name.split(' '); // all words in the array will be looked for in the returned matches
 
-	var vintage = 0;
-	for (var x = 0; x < ratings.length; x++) {
-		var title = ratings.eq(x).find('h4').text().toLowerCase();
-		for (var i = 0; i < nameArray.length; i++) {
-			var keyWord = nameArray[i];
+	function findRating(wine, ratings) {
+		var rating;
+		var name = wine.name.toLowerCase();
+		name = name.replace('reserve', 'reserv').replace(' &', '');
+		var nameArray = name.split(' '); // all words in the array will be looked for in the returned matches
 
-			if (title.search(keyWord) == -1) { // if a matched item does not have a word in the product name, move to next match
-				break;
-			}
-			else if (i == nameArray.length - 1) {  // if the last word checks out, find the vintage and if it is newer than stored vintage, set the rating.
-				var index = title.search(/\d/);
-				var year = Number.parseInt(title.substring(index, index + 4));
-				if (year > vintage) {
-					vintage = year;
+		for (var x = 0; x < ratings.length; x++) {
+			var title = ratings.eq(x).find('div.title').text().toLowerCase();
+			for (var i = 0; i < nameArray.length; i++) {
+				var keyWord = nameArray[i];
+
+				if (title.search(keyWord) == -1) { // if a matched item does not have a word in the product name, move to next match
+					break;
+				}
+				else if (i == nameArray.length - 1) {  // if the last word checks out, find the vintage and if it is newer than stored vintage, set the rating.
 					rating = ratings.eq(x).find('span.rating').text();
+					rating = rating.substring(0,2);
+					wine.rating = rating;
+					return
 				}
 			}
 		}
 	}
-	wine.rating = rating;
+
 	return wine;
 }
 
