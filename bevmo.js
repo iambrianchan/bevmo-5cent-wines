@@ -1,313 +1,439 @@
+"use strict";
 var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 var cheerio = require("cheerio");
 var fs = require("fs");
 var http = require("http");
 var XLSX = require('xlsx');
 
+// module for scraping wines, reviews, generating excel
+var cellar = function() {
 
-cellar = [];
-var size = 0;
+	// function for getting all html from bevmo 5c wine pages
+	// callback returns a string of html that will then be parsed
 
-if (!module.parent) {
-	getWines();
-}
+	function scrapeIds (callback) {
+		console.log("Finding wines from Bevmo...");
 
-var start = new Date();
+		// module for getting 5c wine html
+		var html = (function () {
 
-function getWines() {
-	console.log("Finding wines from Bevmo");
-	var results = [];
-	var pages = [];
-	for (var i = 1; i < 300; i++) {
-		pages.push(i);
-	}
-	function scrape(index, callback) { // function that will make and send xhr
-		index = index % 26;
-
-		var html = "";
-		var xhr = new XMLHttpRequest();
-		var url = 'http://www.bevmo.com/shopby/5cent.html?is_ajax=1&p=' + index + '&is_scroll=1';
-		xhr.open('GET', url);
-		xhr.setRequestHeader('X-Prototype-Version', '1.7');
-		xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-		xhr.onreadystatechange = function() {
-		    	if ( xhr.readyState == 4 && 200 == xhr.status ) {
-		    		html = JSON.parse(xhr.responseText).page;
-		        	callback(html);
-		   		}
-		}
-		xhr.send();
-	}
-
-	pages.forEach(function(item) {
-		scrape(item, function(result) {
-			results.push(result);
-			if (results.length == pages.length) {
-				sortWines(results.join(''));
+			// function for getting html from a single page.
+			// callback returns the html from a single pagination.
+			function getHtmlFromBevmo (index, callback) {
+				index = index % 26;
+				var xhr = new XMLHttpRequest();
+				var url = 'http://www.bevmo.com/shopby/5cent.html?is_ajax=1&p=' + index + '&is_scroll=1';
+				xhr.open('GET', url);
+				xhr.setRequestHeader('X-Prototype-Version', '1.7');
+				xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState == 4 && xhr.status == 200) {
+						var html = JSON.parse(xhr.responseText).page;
+						callback(html);
+					}
+				}
+				xhr.send();
 			}
-		})
-	});
-}
 
-function myIndexOf(wines, wine) {    
-    for (var i = 0; i < wines.length; i++) {
-        if (wines[i].name == wine.name && wines[i].id == wine.id) {
-            return i;
-        }
-    }
-    return -1;
-}
+			// function that simulates 300 scrapes on bevmo's site.
+			// uses getHtmlFromBevmo to return html and finally callback the entire 300 pages of html.
+			function returnHtml (callback) {
+				var pages = [];
+				var results = [];
 
-function getNumbersFromString(string) {
-	return string.replace(/\D/g, "");
-}
+				for (var i = 0; i < 300; i++) {
+					pages.push(i);
+				}
 
-// Use this function to format money with more than 3 digits.
-// Number.prototype.formatMoney = function(c, d, t){
-// var n = this, 
-//     c = isNaN(c = Math.abs(c)) ? 2 : c, 
-//     d = d == undefined ? "." : d, 
-//     t = t == undefined ? "," : t, 
-//     s = n < 0 ? "-" : "", 
-//     i = parseInt(n = Math.abs(+n || 0).toFixed(c)) + "", 
-//     j = (j = i.length) > 3 ? j % 3 : 0;
-//    return s + (j ? i.substr(0, j) + t : "") + i.substr(j).replace(/(\d{3})(?=\d)/g, "$1" + t) + (c ? d + Math.abs(n - i).toFixed(c).slice(2) : "");
-//  };
-
-function sortWines(html) {
-	$ = cheerio.load(html);
-	var cheerio_wines = $('li.item');
-	var wines = [];
-
-	cheerio_wines.each(function(index, element) {
-		var name = $(this).find('h2.product-name a').attr('title'); // get the name from the item.
-		name = name.replace(/\(.+\)/g, "").replace(/\'[\d]+/g,"").trim();
-		var price;
-		var priceBox = $(this).find('div.price-box'); // this price box contains the price.
-
-		if (priceBox.find('p.special-price').length > 0) {
-			price = priceBox.find('p.special-price').find('span.price').text();
-		}
-		else {
-			price = priceBox.find('span.price').eq(0).text();
-		}
-		var regularPrice = 0;
-		price = Number(price.replace(/[^0-9\.]+/g,""));
-
-		if ($(this).find('p.availability.out-of-stock').length > 0) { // in case an item is out of stock, we set price to the string.
-					regularPrice = price;
-					price = 'Out of stock';
-		}
-		var id = $(this).find('span.regular-price, span.price').attr('id');
-		id = getNumbersFromString(id);
-
-		var wine = {  //the basic wine object, more keys will be added later.
-			'name': name,
-			'price': price,
-			'id': id,
-			'regularPrice': regularPrice
-			};
-		if (myIndexOf(wines, wine) == -1) {
-			wines.push(wine);
-		}
-	});
-	size = wines.length; // set the number of wines for later reference
-	console.log('\nfound: ' + wines.length + ' wines.');
-	console.log("######################################################");
-	console.log("Getting reviews for wines");
-	return getReview(wines);  
-}
-
-function getReview(wines) {
-	cellar = [];
-
-	function getBevmoReview(wine, check) { // function to make and send get request to bevmo for each individual wine
-		var id = wine.id;
-		var html;
-		var url = 'www.bevmo.com';
-		var options = {
-			host: url,
-			port: 80,
-			path: '/catalog/product/view/id/' + id
-		};
-		var callback = function(response) {
-			response.on('data', function (chunk) {
-		    	html += chunk;
-		    	return;
-		  	});
-
-			response.on('error', function(e) {
-				console.log('got error: ' + e.message);
-				return;
-			})
-
-		  	response.on('end', function () {
-		  		var data = extractReview(html);
-		  		if (!wine.regularPrice) {  // if the item was out of stock this key will have a string value.
-		  			wine.regularPrice = data.regularPrice;
-		  		}
-		    	wine.rating = data.rating;
-		    	wine.type =  data.type;
-		    	wine.vintage = data.vintage;
-		    	wine.region = data.region;
-		    	wine.appellation = data.appellation;
-		    	check(wine);
-		  	});
-		}
-		var req = http.get(options, callback);
-	}
-
-	wines.forEach(function(item) {
-		getBevmoReview(item, function(result) {
-			if (!result.rating) {
-				getWineEnthusiastReview(result, function(result) {
-					pushToCellar(result);
+				pages.forEach(function(item) {
+					getHtmlFromBevmo(item, function joinHtml(result) {
+						results.push(result);
+						if (results.length == pages.length) {
+							callback(results.join(''));
+						}
+					})
 				});
 			}
-			else {
-				pushToCellar(result);
+
+			return {
+				getHtml : returnHtml
 			}
+		})();
+
+		// accessible method of the module uses returnHtml.
+		// 300 pages of 5c wine html is returned from callback
+		html.getHtml(function (result) {
+			callback(result);
 		});
-	});
-}
-
-
-function extractReview(chunk) {
-	$ = cheerio.load(chunk);
-	var regularPrice = $('span.price').eq(0).text();  // find the regular price of the product.
-	regularPrice = Number(regularPrice.replace(/[^0-9\.]+/g,""));
-
-	var table = $('#product-attribute-specs-table');
-	trr = table.find('tbody tr');
-	var rating = "";
-	var type, vintage, region, appellation;
-	type = vintage = region = appellation = "n/a";
-
-	for (var i = 0; i < trr.length; i++) {
-		if (trr.eq(i).children().eq(0).text() == "Type/Varietal") {  // find the type
-			type = trr.eq(i).children().eq(1).text().trim();
-			type = convertWineType(type);
-		}
-		if (trr.eq(i).children().eq(0).text() == "Vintage") {  // find the vintage
-			vintage = trr.eq(i).children().eq(1).text().trim();
-		}
-
-		if (trr.eq(i).children().eq(0).text() == "Region") {  // find the region
-			region = trr.eq(i).children().eq(1).text().trim();
-		}
-
-		if (trr.eq(i).children().eq(0).text() == "Appellation") {  // find the appellation
-			appellation = trr.eq(i).children().eq(1).text().trim();
-		}
-		if (trr.eq(i).children().eq(0).text().search("Rating") != -1) {  // find the rating
-			rating = trr.eq(i).children().eq(1).text().trim();
-		}
-	}
-	return {'rating': rating, 'type': type, 'vintage': vintage, 'region': region, 'appellation': appellation, 'regularPrice': regularPrice}; // return a data object with the extracted values.
-}
-
-function pushToCellar(wine) {
-	cellar.push(wine);
-
-	if (cellar.length == size) {  // if the array is the same length as size variable set earlier, create the excel
-		cellar.sort(function(a, b) {
-			return a.price - b.price;
-		});
-		console.log("######################################################");
-		console.log("Creating excel from " + cellar.length + " wines")
-		makeExcel(cellar);
-		var end = new Date();
-		var timeElapsed = (end - start) / 1000;
-		console.log('Process took: ' + timeElapsed + ' seconds');
-	}
-}
-
-function getWineEnthusiastReview(wine, callback) {
-		var html;
-		var name = wine.name.toLowerCase();
-		name = name.replace('reserve', 'reserv').replace(' &', "");
-		name = name.split(" ").join("+");
-		name = name.split("-").join("+");
-
-		// old code from before winemag got an overhaul
-
-		// var url = 'www.buyingguide.winemag.com/search?q=';
-		// var xhr = new XMLHttpRequest();
-		// xhr.open("GET", "http://buyingguide.winemag.com/search?q=" + name);
-		// xhr.onreadystatechange = function() {
-		//     	if ( xhr.readyState == 4 && 200 == xhr.status ) {
-		//     		console.log(xhr.responseText);
-		// 			wine = extractWineEnthusiastReview(wine, xhr.responseText);
-		// 			console.log(wine);
-		// 			callback(wine);
-		//         	return;
-		//    		}
-		//    		// console.log(wine);
-		// }
-		// xhr.send();
-		// var url = "www.winemag.com";
-		var options = {
-			host: "www.winemag.com",
-			port: 80,
-			path: "/?s=" + name + "&search_type=reviews"
-		};
-		var scrape = function (response) {
-			response.on('data', function (chunk) {
-				html += chunk;
-				return;
-			});
-			response.on('error', function (e) {
-				console.log('got error: ' + e.message);
-				return;
-			});
-			response.on('end', function () {
-				wine = extractWineEnthusiastReview(wine, html);
-				callback(wine);
-				return;
-			})
-		}
-		var req = http.get(options, scrape);
-}
-
-function extractWineEnthusiastReview(wine, chunk) {
-	var rating = 'n/a';
-	wine.rating = rating;
-
-	$ = cheerio.load(chunk);
-	var ratings = $('div.results'); // all matches found will be in this ratings variable
-	if (ratings.length > 0) {
-		findRating(wine, ratings);
 	}
 
-	function findRating(wine, ratings) {
-		var rating;
-		var name = wine.name.toLowerCase();
-		name = name.replace('reserve', 'reserv').replace(' &', '');
-		var nameArray = name.split(' '); // all words in the array will be looked for in the returned matches
+	// function that scrapes the data of each wine.
+	// returns an array of wine objects
+	function scrapeWines (html, callback) {
 
-		for (var x = 0; x < ratings.length; x++) {
-			var title = ratings.eq(x).find('div.title').text().toLowerCase();
-			for (var i = 0; i < nameArray.length; i++) {
-				var keyWord = nameArray[i];
+		// module finds all product ids, scrapes product details from id, and builds an array of wine objects.
+		var wines = (function (html) {
 
-				if (title.search(keyWord) == -1) { // if a matched item does not have a word in the product name, move to next match
-					break;
+			// function filters html for individual product ids.
+			// product ids are then used to get product details.
+			function filterUniqueWines () {
+				var $ = cheerio.load(html);
+				var allWines = $('li.item');
+				var wineIds = [];
+
+				// function returns only numbers from a string, used to parse product id.
+				function getNumbersFromString(string) {
+					return string.replace(/\D/g, "");
 				}
-				else if (i == nameArray.length - 1) {  // if the last word checks out, find the vintage and if it is newer than stored vintage, set the rating.
-					rating = ratings.eq(x).find('span.rating').text();
-					rating = rating.substring(0,2);
-					wine.rating = rating;
-					return
+
+				allWines.each(function (index, element) {
+					var id = $(this).find('span.regular-price, span.price').attr('id');
+					id = getNumbersFromString(id);
+					if (wineIds.indexOf(id) == -1) {
+						wineIds.push(id);					
+					}
+				});
+
+				return wineIds;		
+			}
+
+			// function uses product ids from filterUniqueWines to scrape, then build an array of wine objects
+			function buildAllWines (arrayOfIds, callback) {
+
+				// scrapes bevmo with product id to obtain html on individual product.
+				// buildWine is then called using html and id to parse the html and return a wine object
+				function buildWineFromBevmo (id, callback) {
+					var xhr = new XMLHttpRequest();
+					var url = 'http://www.bevmo.com/catalog/product/view/id/' + id;
+					xhr.open('GET', url);
+					xhr.setRequestHeader('X-Prototype-Version', '1.7');
+					xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+					xhr.onreadystatechange = function() {
+						if (xhr.readyState == 4 && xhr.status == 200) {
+							var html = xhr.responseText;
+							var wine = buildWine(id, html);
+							callback(wine);
+						}
+					}
+					xhr.send();
+				}
+
+				// parses the html and builds a wine object.
+				function buildWine (id, html) {
+					var name, priceElement, currentPrice, regularPrice, rating, type, vintage, region, appellation;
+
+					var $ = cheerio.load(html);
+					name = $('div.product-name').eq(0).text()
+					name = cleanName(name);
+
+					priceElement = $('div.price-box').eq(0);
+
+					if (priceElement.children().length == 1) {
+						currentPrice = priceElement.text();
+						regularPrice = priceElement.text();
+					}
+					else {
+						currentPrice = priceElement.find('p.special-price').find('span.price').text();
+						regularPrice = priceElement.find('p.old-price').find('span.price').text();
+					}
+
+					currentPrice = cleanWord(currentPrice);
+					regularPrice = cleanWord(regularPrice);
+					rating = $('th:contains("Rating")').next().text();
+					rating = cleanRating(rating);
+					type = $('th:contains("Type")').next().text();
+					type = convertWineType(cleanWord(type));
+					vintage = $('th:contains("Vintage")').next().text();
+					vintage = cleanWord(vintage);
+					region = $('th:contains("Region")').next().text();
+					region = cleanWord(region);
+					appellation = $('th:contains("Appellation")').eq(0).next().text();
+					appellation = cleanWord(appellation);
+
+					// functions for cleaning name, rating, words found from scraping
+					function cleanName (name) {
+						name = name.replace(/\(.+\)/g, "").replace(/\'[\d]+/g,"").trim();
+						return name;
+					}
+					function cleanRating (rating) {
+						rating = rating.trim();
+						return rating;
+					}
+					function cleanWord (word) {
+						word = word.trim();
+						if (!word) {
+							word = "n/a";
+						}
+						return word;
+					}
+					// wine is built with scraped values
+					var wine = {
+						"name" : name,
+						"id" : id,
+						"currentPrice" : currentPrice,
+						"regularPrice" : regularPrice,
+						"rating" : rating,
+						"type" : type,
+						"vintage" : vintage,
+						"region" : region,
+						"appellation" : appellation
+					};
+					return wine;
+				}
+
+				// all ids are used to build a wine.
+				// all resulting wine objects are pushed to wines array which is returned.
+				var wines = [];
+				arrayOfIds.forEach(function scrape(item) {
+					buildWineFromBevmo(item, function (result){
+						wines.push(result);
+						if (wines.length == arrayOfIds.length) {
+							callback(wines);
+						}
+					});
+				})
+
+
+			}
+
+			// the function that is exposed.
+			// filterUniqueWines is called, then buildAllWines is called.
+			// returns the array of wine objects
+			function returnWines() {
+				var ids = filterUniqueWines();
+				buildAllWines(ids, function (result) {
+					callback(result);
+				});
+			}
+
+			return {
+				getWines : returnWines
+			}
+
+		})(html)
+
+		wines.getWines();
+	}
+
+	// function scrapes wine enthusiast website for reviews
+	function scrapeWineEnthusiast (wines, callback) {
+
+		// module responsible for scraping wine enthusiast, and updating a wine's review
+		var wineEnthusiast = (function (wines) {
+			function getHtmlFromWineEnthusiast (wine, callback) {
+				var html;
+				var name = cleanNameForWineEnthusiast(wine.name);
+				var options = {
+					host: "www.winemag.com",
+					path: "/?s=" + name + "&search_type=reviews"
+				};
+
+				var scrape = function(response) {
+					response.on('data', function (chunk) {
+						html += chunk;
+						return;
+					});
+					response.on('error', function (e) {
+						console.log('Received error: ' + e.message);
+						return;
+					});
+					response.on('end', function() {
+						callback(wine, html);
+						return;
+					})
+				}
+				// names must be cleaned up for spaces, the word reserve is sometimes reserva, and &
+				function cleanNameForWineEnthusiast(name) {
+					name = name.toLowerCase().replace('reserve', 'reserv').replace(' &', "");
+					name = name.split(" ").join("+");
+					name = name.split("-").join("+");
+					return name;
+				}
+
+				var req = http.get(options, scrape);
+			}
+
+			// parses the html returned from request, returns rating
+			function getRatingFromWineEnthusiast (wine, html, callback) {
+				var rating;
+				var $ = cheerio.load(html);
+				var ratings = $('div.results');
+
+				findRating(wine, ratings, function (wine, rating) {
+					callback(wine, rating);
+				});
+
+				// parses html and returns rating
+				function findRating(wine, ratings, callback) {
+					var rating;
+					var name = wine.name.toLowerCase();
+					name = name.replace('reserve', 'reserv').replace(' &', '');
+
+					var nameArray = name.split(' ');
+
+					for (var i = 0; i < ratings.length; i++) {
+						var title = ratings.eq(i).find('div.title').text().toLowerCase();
+
+						for (var j = 0; j < nameArray.length; j++) {
+							var keyWord = nameArray[j];
+
+							if (title.search(keyWord) == -1) {
+								break;
+							}
+							else if (j == nameArray.length - 1) {
+								rating = ratings.eq(i).find('span.rating').text();
+								rating = rating.substring(0, 2);
+							}
+						}
+					}
+					callback(wine, rating);
 				}
 			}
-		}
+
+			// exposed function for wineEnthusiast module
+			function returnWinesWithWineEnthusiastRating(wines, callback) {
+				var correctedWines = [];
+				wines.forEach(function getHtml(wine) {
+					getHtmlFromWineEnthusiast(wine, function parseHtml(wine, html) {
+						getRatingFromWineEnthusiast(wine, html, function addRatingToWine(wine, rating) {
+							if (rating != undefined && !wine.rating) {
+								wine.rating = rating;
+							}
+							if (!wine.rating) {
+								wine.rating = "n/a";
+							}
+							correctedWines.push(wine);
+
+							if (correctedWines.length == wines.length) {
+								callback(correctedWines);
+							}
+						})
+					})
+				})
+			}
+
+			return {
+				getWinesWithWineEnthusiastRating : returnWinesWithWineEnthusiastRating
+			}
+			
+		})(wines);
+		wineEnthusiast.getWinesWithWineEnthusiastRating(wines, function addWineRatings(result) {
+				callback(result);
+			});
 	}
 
-	return wine;
-}
+	// generates an excel sheet from the array of wine objects
+	function makeExcel(wines) {
+		function datenum(v, date1904) {
+			if(date1904) v+=1462;
+				var epoch = Date.parse(v);
+			return (epoch - new Date(Date.UTC(1899, 11, 30))) / (24 * 60 * 60 * 1000);
+		}
 
-function convertWineType(type) {  // converts type from bevmo into generic types
-	switch (type) {
+		function createExcel(data, opts) {
+			var ws = {};
+			var range = {s: {c:10000000, r:10000000}, e: {c:0, r:0 }};
+			for(var R = 0; R != data.length; ++R) {
+				if (R < 1) { // set the column names
+					for(var C = 0; C != data[0].length; ++C) {
+						if(range.s.r > R) range.s.r = R;
+						if(range.s.c > C) range.s.c = C;
+						if(range.e.r < R) range.e.r = R;
+						if(range.e.c < C) range.e.c = C;
+						var cell = {v: data[R][C] };
+						if(cell.v == null) continue;
+						var cell_ref = XLSX.utils.encode_cell({c:C,r:R});
+						
+						if(typeof cell.v === 'number') cell.t = 'n';
+						else if(typeof cell.v === 'boolean') cell.t = 'b';
+						else if(cell.v instanceof Date) {
+							cell.t = 'n'; cell.z = XLSX.SSF._table[14];
+							cell.v = datenum(cell.v);
+						}
+						else cell.t = 's';
+						
+						ws[cell_ref] = cell;
+					}		
+				}
+				else { // set each product as a row in the table
+					for (var C = 0; C < data[R].length; ++C) {
+						for (var i = 0; i < data[0].length; i++) {
+							var cell;
+							switch(i) {
+								case 0:
+									cell = {v: data[R][C].name};
+									break;
+								case 1:
+									cell = {v: data[R][C].id};
+									break;
+								case 2:
+									cell = {v: data[R][C].currentPrice};
+									break;
+								case 3:
+									cell = {v: data[R][C].regularPrice};
+									break;
+								case 4:
+									cell = {v: data[R][C].rating};
+									break;
+								case 5:
+									cell = {v: data[R][C].type};
+									break;
+								case 6:
+									cell = {v: data[R][C].vintage};
+									break;
+								case 7:
+									cell = {v: data[R][C].region};
+									break;
+								case 8:
+									cell = {v: data[R][C].appellation};
+									break;
+							}
+							// if(range.s.r > R) range.s.r = R;
+							// if(range.s.c > C) range.s.c = C;
+							if(range.e.r < C + 1) range.e.r = C + 1;
+							// if(range.e.c < C) range.e.c = C;
+							var row = C + 1;
+							var cell_ref = XLSX.utils.encode_cell({c:i,r:row});
+							if(typeof cell.v === 'number') cell.t = 'n';
+							else if(typeof cell.v === 'boolean') cell.t = 'b';
+							else if(cell.v instanceof Date) {
+								cell.t = 'n'; cell.z = XLSX.SSF._table[14];
+								cell.v = datenum(cell.v);
+							}
+							else cell.t = 's';
+							ws[cell_ref] = cell;
+						}
+					}
+				}
+			}
+			if(range.s.c < 10000000) ws['!ref'] = XLSX.utils.encode_range(range);
+			return ws;
+		}
+		/* data */
+		var data = [['Name', 'ID', 'Current Price', 'Regular Price', 'Rating', 'Type', 'Vintage', 'Region', 'Appellation']];
+		data.push(wines);
+
+		var ws_name = "5centWines";
+
+		function Workbook() {
+			if(!(this instanceof Workbook)) return new Workbook();
+			this.SheetNames = [];
+			this.Sheets = {};
+		}
+
+		var wb = new Workbook();
+		var ws = createExcel(data);
+		/* add worksheet to workbook */
+		wb.SheetNames.push(ws_name);
+		wb.Sheets[ws_name] = ws;
+
+		/* write file */
+		XLSX.writeFile(wb, '5centwines.xlsx');
+	}
+
+	// helper function that converts type from bevmo into generic types
+	function convertWineType(type) {
+		switch (type) {
 			case "Other Reds":
 				return "Other Red";
 			case "Other Whites":
@@ -363,118 +489,28 @@ function convertWineType(type) {  // converts type from bevmo into generic types
 		}
 	}
 
-function makeExcel(wines) {
-	function datenum(v, date1904) {
-	if(date1904) v+=1462;
-	var epoch = Date.parse(v);
-	return (epoch - new Date(Date.UTC(1899, 11, 30))) / (24 * 60 * 60 * 1000);
-}
+	// point of entry for program
+	function findAllWines() {
+		scrapeIds(function (ids) {
 
-function sheet_from_array_of_arrays(data, opts) {
-	var ws = {};
-	var range = {s: {c:10000000, r:10000000}, e: {c:0, r:0 }};
-	for(var R = 0; R != data.length; ++R) {
-		if (R < 1) { // set the column names
-			for(var C = 0; C != data[0].length; ++C) {
-				if(range.s.r > R) range.s.r = R;
-				if(range.s.c > C) range.s.c = C;
-				if(range.e.r < R) range.e.r = R;
-				if(range.e.c < C) range.e.c = C;
-				var cell = {v: data[R][C] };
-				if(cell.v == null) continue;
-				var cell_ref = XLSX.utils.encode_cell({c:C,r:R});
-				
-				if(typeof cell.v === 'number') cell.t = 'n';
-				else if(typeof cell.v === 'boolean') cell.t = 'b';
-				else if(cell.v instanceof Date) {
-					cell.t = 'n'; cell.z = XLSX.SSF._table[14];
-					cell.v = datenum(cell.v);
-				}
-				else cell.t = 's';
-				
-				ws[cell_ref] = cell;
-			}		
-		}
-		else { // set each product as a row in the table
-			for (var C = 0; C < data[R].length; ++C) {
-				for (var i = 0; i < data[0].length; i++) {
-					var cell;
-					switch(i) {
-						case 0:
-							cell = {v: data[R][C].name};
-							break;
-						case 1:
-							if (typeof data[R][C].price == "string") {
-								cell = {v: data[R][C].price};
-								break;
-							}
-								cell = {v: '$' + data[R][C].price};
-								break;
-						case 2:
-							cell = {v: data[R][C].id};
-							break;
-						case 3:
-							cell = {v: '$' + data[R][C].regularPrice};
-							break;
-						case 4:
-							cell = {v: data[R][C].rating};
-							break;
-						case 5:
-							cell = {v: data[R][C].type};
-							break;
-						case 6:
-							cell = {v: data[R][C].vintage};
-							break;
-						case 7:
-							cell = {v: data[R][C].region};
-							break;
-						case 8:
-							cell = {v: data[R][C].appellation};
-							break;
-					}
-					// if(range.s.r > R) range.s.r = R;
-					// if(range.s.c > C) range.s.c = C;
-					if(range.e.r < C + 1) range.e.r = C + 1;
-					// if(range.e.c < C) range.e.c = C;
-					var row = C + 1;
-					var cell_ref = XLSX.utils.encode_cell({c:i,r:row});
-					if(typeof cell.v === 'number') cell.t = 'n';
-					else if(typeof cell.v === 'boolean') cell.t = 'b';
-					else if(cell.v instanceof Date) {
-						cell.t = 'n'; cell.z = XLSX.SSF._table[14];
-						cell.v = datenum(cell.v);
-					}
-					else cell.t = 's';
-					ws[cell_ref] = cell;
-				}
-			}
-		}
+			// scrape bevmo from product id to get information on each wine
+			scrapeWines(ids, function (wines) {
+				console.log("found " + wines.length + " wines")
+
+				// scrape wine enthusiast and try to add rating to wine if it didn't get one from bevmo
+				scrapeWineEnthusiast(wines, function (correctedWines) {
+
+	   				// format wines into an exel
+	   				 makeExcel(correctedWines);
+				});
+
+			});
+		});		
+	};
+
+	return {
+		findWines : findAllWines
 	}
-	if(range.s.c < 10000000) ws['!ref'] = XLSX.utils.encode_range(range);
-	return ws;
-}
+}();
 
-/* data */
-var data = [['Name', 'Price', 'ID', 'Regular Price', 'Rating', 'Type', 'Vintage', 'Region', 'Appellation']];
-data.push(wines);
-
-var ws_name = "5centWines";
-
-function Workbook() {
-	if(!(this instanceof Workbook)) return new Workbook();
-	this.SheetNames = [];
-	this.Sheets = {};
-}
-
-var wb = new Workbook(), ws = sheet_from_array_of_arrays(data);
-
-/* add worksheet to workbook */
-wb.SheetNames.push(ws_name);
-wb.Sheets[ws_name] = ws;
-
-/* write file */
-XLSX.writeFile(wb, '5centwines.xlsx');
-
-}
-
-exports.convertWineType = convertWineType;
+cellar.findWines();
