@@ -271,9 +271,11 @@ var cellar = function() {
 
 					var nameArray = name.split(' ');
 
+					// go through each rating	
 					for (var i = 0; i < ratings.length; i++) {
 						var title = ratings.eq(i).find('div.title').text().toLowerCase();
 
+						// check if every word in wine title is contained in rating title
 						for (var j = 0; j < nameArray.length; j++) {
 							var keyWord = nameArray[j];
 
@@ -334,7 +336,9 @@ var cellar = function() {
 			var ws = {};
 			var range = {s: {c:10000000, r:10000000}, e: {c:0, r:0 }};
 			for(var R = 0; R != data.length; ++R) {
-				if (R < 1) { // set the column names
+
+				// Set column names if R = 0
+				if (R < 1) { 
 					for(var C = 0; C != data[0].length; ++C) {
 						if(range.s.r > R) range.s.r = R;
 						if(range.s.c > C) range.s.c = C;
@@ -355,8 +359,11 @@ var cellar = function() {
 						ws[cell_ref] = cell;
 					}		
 				}
-				else { // set each product as a row in the table
+				// set each product as a row in the table
+				else { 
+					// loop through each product
 					for (var C = 0; C < data[R].length; ++C) {
+						// loop through each product attribute
 						for (var i = 0; i < data[0].length; i++) {
 							var cell;
 							switch(i) {
@@ -364,7 +371,7 @@ var cellar = function() {
 									cell = {v: data[R][C].name};
 									break;
 								case 1:
-									cell = {v: data[R][C].id};
+									cell = {v: "http://www.bevmo.com/catalog/product/view/id/" + data[R][C].id};
 									break;
 								case 2:
 									cell = {v: data[R][C].currentPrice};
@@ -409,11 +416,12 @@ var cellar = function() {
 			if(range.s.c < 10000000) ws['!ref'] = XLSX.utils.encode_range(range);
 			return ws;
 		}
-		/* data */
-		var data = [['Name', 'ID', 'Current Price', 'Regular Price', 'Rating', 'Type', 'Vintage', 'Region', 'Appellation']];
+
+		// data is an array with a subarray for column titles, and the array of wines
+		var data = [['Name', 'Link', 'Current Price', 'Regular Price', 'Rating', 'Type', 'Vintage', 'Region', 'Appellation']];
 		data.push(wines);
 
-		var ws_name = "5centWines";
+		var ws_name = "5¢ Wines";
 
 		function Workbook() {
 			if(!(this instanceof Workbook)) return new Workbook();
@@ -428,7 +436,7 @@ var cellar = function() {
 		wb.Sheets[ws_name] = ws;
 
 		/* write file */
-		XLSX.writeFile(wb, '5centwines.xlsx');
+		XLSX.writeFile(wb, '5¢ Wines.xlsx');
 	}
 
 	// helper function that converts type from bevmo into generic types
@@ -509,8 +517,11 @@ var cellar = function() {
 	};
 
 	return {
-		findWines : findAllWines
+		findWines : findAllWines,
+		convertWineType : convertWineType
 	}
 }();
 
 cellar.findWines();
+
+exports.convertWineType = cellar.convertWineType;
